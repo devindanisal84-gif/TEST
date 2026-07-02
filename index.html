@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smooth Scroll Animation</title>
+    <style>
+        /* Modern CSS Reset & Style */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow-x: hidden;
+            color: #fff;
+        }
+
+        /* Customize Scrollbar to look premium */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #222;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #333;
+        }
+
+        /* Sticky container to lock the canvas in place while scrolling */
+        .scroll-container {
+            height: 800vh; /* Adjust scroll length here */
+            position: relative;
+        }
+
+        .canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Subtle loading screen overlay */
+        .loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.6s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.6s;
+        }
+
+        .loader.fade-out {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .loader-text {
+            font-size: 1.5rem;
+            font-weight: 300;
+            letter-spacing: 0.1em;
+            margin-bottom: 1.5rem;
+            text-transform: uppercase;
+        }
+
+        .progress-bar-container {
+            width: 200px;
+            height: 2px;
+            background-color: #222;
+            border-radius: 1px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            width: 0%;
+            height: 100%;
+            background-color: #fff;
+            transition: width 0.1s ease-out;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loader Overlay -->
+    <div id="loader" class="loader">
+        <div class="loader-text" id="loader-text">Loading 0%</div>
+        <div class="progress-bar-container">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+        </div>
+    </div>
+
+    <!-- Scroll Track container -->
+    <div class="scroll-container">
+        <!-- Canvas fixed container -->
+        <div class="canvas-container">
+            <canvas id="animation-canvas"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('animation-canvas');
+        const ctx = canvas.getContext('2d');
+        const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loader-text');
+        const progressBarFill = document.getElementById('progress-bar-fill');
+
+        const totalFrames = 181;
+        const images = [];
+        let loadedCount = 0;
+        let needsRedraw = false;
+
+        // Smooth Scroll variables
+        let currentFrame = 1;
+        let targetFrame = 1;
+        const easing = 0.12; // Smoothness factor (lower = smoother/slower, higher = faster response)
+
+        // Helper to format frame numbers to 3 digits (e.g. 1 -> "001")
+        const pad = (num) => String(num).padStart(3, '0');
+
+        // Preload all frames
+        function preloadImages() {
+            for (let i = 1; i <= totalFrames; i++) {
+                const img = new Image();
+                img.src = `ezgif-frame-${pad(i)}.jpg`;
+                img.onload = () => {
+                    loadedCount++;
+                    const percent = Math.floor((loadedCount / totalFrames) * 100);
+                    loaderText.textContent = `Loading ${percent}%`;
+                    progressBarFill.style.width = `${percent}%`;
+
+                    if (loadedCount === totalFrames) {
+                        // Small timeout for smooth UX transition
+                        setTimeout(() => {
+                            loader.classList.add('fade-out');
+                            init();
+                        }, 300);
+                    }
+                };
+                img.onerror = () => {
+                    console.error(`Failed to load frame ${i}`);
+                    loadedCount++; // Count error to avoid blocking loader if a frame is missing
+                    if (loadedCount === totalFrames) {
+                        setTimeout(() => {
+                            loader.classList.add('fade-out');
+                            init();
+                        }, 300);
+                    }
+                };
+                images.push(img);
+            }
+        }
+
+        // Initialize animation
+        function init() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            window.addEventListener('scroll', updateTargetFrame);
+            
+            // Draw initial frame
+            updateTargetFrame();
+            currentFrame = targetFrame; // Snap to current scroll position initially
+            drawFrame(Math.round(currentFrame));
+
+            // Start animation loop
+            requestAnimationFrame(animateLoop);
+        }
+
+        // Handle canvas resizing for device pixel ratios
+        function resizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = window.innerWidth * dpr;
+            canvas.height = window.innerHeight * dpr;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = window.innerHeight + 'px';
+            ctx.scale(dpr, dpr);
+            needsRedraw = true;
+        }
+
+        // Update target frame index based on scroll position
+        function updateTargetFrame() {
+            const scrollTop = window.scrollY || window.pageYOffset;
+            const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+            
+            if (maxScroll <= 0) return;
+            
+            const scrollFraction = scrollTop / maxScroll;
+            // Map scroll fraction to frames [1, totalFrames]
+            targetFrame = Math.max(1, Math.min(totalFrames, Math.ceil(scrollFraction * totalFrames)));
+        }
+
+        // Main animation tick
+        let lastDrawnFrame = -1;
+        function animateLoop() {
+            // Lerp current frame towards target frame
+            currentFrame += (targetFrame - currentFrame) * easing;
+
+            const roundedFrame = Math.round(currentFrame);
+            if (roundedFrame !== lastDrawnFrame || needsRedraw) {
+                drawFrame(roundedFrame);
+                lastDrawnFrame = roundedFrame;
+                needsRedraw = false;
+            }
+
+            requestAnimationFrame(animateLoop);
+        }
+
+        // Draw image frame using a center-cover fit logic (no dynamic zoom)
+        function drawFrame(index) {
+            const img = images[index - 1];
+            if (!img || !img.complete) return;
+
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const imgW = img.width;
+            const imgH = img.height;
+
+            const canvasRatio = w / h;
+            const imgRatio = imgW / imgH;
+
+            let drawWidth, drawHeight, drawX, drawY;
+
+            // object-fit: cover emulation (fully responsive, centered, fills viewport without zoom animation)
+            if (canvasRatio > imgRatio) {
+                // Screen is wider than image aspect ratio
+                drawWidth = w;
+                drawHeight = w / imgRatio;
+                drawX = 0;
+                drawY = (h - drawHeight) / 2;
+            } else {
+                // Screen is taller than image aspect ratio
+                drawWidth = h * imgRatio;
+                drawHeight = h;
+                drawX = (w - drawWidth) / 2;
+                drawY = 0;
+            }
+
+            ctx.clearRect(0, 0, w, h);
+            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        }
+
+        // Start preloading process
+        preloadImages();
+    </script>
+</body>
+</html>
