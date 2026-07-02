@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGHORA — Seraphim</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      overflow-x: hidden;
+    }
+
+    /* ── Sticky scroll container ── */
+    #scroll-container {
+      position: relative;
+      /* 181 frames × 12px scroll-per-frame = ~2172px travel past 100vh */
+      height: calc(100vh + 181 * 12px);
+    }
+
+    #sticky-frame {
+      position: sticky;
+      top: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="scroll-container">
+    <div id="sticky-frame">
+      <canvas id="frame-canvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const TOTAL_FRAMES = 181;
+      /* Use relative path — keep the HTML in the same drive area or adjust as needed */
+      const FRAME_DIR = 'C:/Users/hp/Downloads/Compressed/ezgif-2d8908ac5e2d0009-jpg/';
+
+      const canvas = document.getElementById('frame-canvas');
+      const ctx    = canvas.getContext('2d');
+
+      let currentFrame = 0;
+
+      /* ── Resize canvas to match viewport exactly ── */
+      function resize() {
+        canvas.width  = window.innerWidth;
+        canvas.height = window.innerHeight;
+        drawFrame(currentFrame);
+      }
+
+      /* ── Build frame path ── */
+      function pad(n) { return String(n).padStart(3, '0'); }
+      function framePath(i) {
+        return FRAME_DIR + 'ezgif-frame-' + pad(i + 1) + '.jpg';
+      }
+
+      /* ── Cover-fit draw — fills viewport, no zoom artefacts ── */
+      function drawFrame(index) {
+        const img = frames[index];
+        if (!img || !img.complete || !img.naturalWidth) return;
+
+        const cw = canvas.width,  ch = canvas.height;
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+
+        /* scale uniformly so the image fully covers the canvas */
+        const scale = Math.max(cw / iw, ch / ih);
+        const sw = iw * scale, sh = ih * scale;
+        const dx = (cw - sw) / 2, dy = (ch - sh) / 2;
+
+        ctx.clearRect(0, 0, cw, ch);
+        ctx.drawImage(img, dx, dy, sw, sh);
+      }
+
+      /* ── Frame cache ── */
+      const frames = new Array(TOTAL_FRAMES);
+
+      function preloadAll() {
+        for (let i = 0; i < TOTAL_FRAMES; i++) {
+          (function(idx) {
+            const img = new Image();
+            img.decoding = 'async';
+            img.src = framePath(idx);
+            img.onload = () => {
+              if (idx === 0) drawFrame(0);   /* show first frame immediately */
+            };
+            frames[idx] = img;
+          })(i);
+        }
+      }
+
+      /* ── rAF-based smooth scroll handler ── */
+      let rafPending = false;
+
+      function onScroll() {
+        if (!rafPending) {
+          rafPending = true;
+          requestAnimationFrame(updateFrame);
+        }
+      }
+
+      function updateFrame() {
+        rafPending = false;
+        const container = document.getElementById('scroll-container');
+        const maxScroll = container.offsetHeight - window.innerHeight;
+        const progress  = Math.min(Math.max(window.scrollY / maxScroll, 0), 1);
+        const idx       = Math.round(progress * (TOTAL_FRAMES - 1));
+
+        if (idx !== currentFrame) {
+          currentFrame = idx;
+          drawFrame(currentFrame);
+        }
+      }
+
+      /* ── Bootstrap ── */
+      window.addEventListener('resize', resize, { passive: true });
+      window.addEventListener('scroll', onScroll, { passive: true });
+
+      resize();
+      preloadAll();
+    })();
+  </script>
+
+</body>
+</html>
